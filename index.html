@@ -1,0 +1,1146 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Little Dreamyland Demo</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #1d1f24; color: #e8e2d6; font: 14px/1.5 system-ui, sans-serif; }
+  body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
+  #stage { position: relative; box-shadow: 0 4px 24px #0008; --k: 1; }
+  canvas { image-rendering: pixelated; image-rendering: crisp-edges; display: block; width: 100%; height: 100%; }
+  /* Dialogue box: full canvas width, along the bottom edge (or centred during the intro).
+     Sizes are in game pixels times --k. */
+  #dialog {
+    position: absolute; left: 0; right: 0; bottom: 0; height: calc(var(--k) * 54px); box-sizing: border-box;
+    background: #8a5434; border: calc(var(--k) * 2px) solid #4e2f1f;
+    box-shadow: inset 0 0 0 calc(var(--k) * 1px) #b27a4f;
+    padding: calc(var(--k) * 6px) calc(var(--k) * 10px) calc(var(--k) * 6px) calc(var(--k) * 6px);
+    color: #fff3dc; font-size: calc(var(--k) * 8px); line-height: 1.5;
+    display: flex; gap: calc(var(--k) * 8px); align-items: flex-start;
+  }
+  #dialog.center { top: 50%; bottom: auto; transform: translateY(-50%); }
+  #dialog[hidden] { display: none; }
+  /* Speaker portrait: 19x19 crop of the idle sprite (or an item icon) shown at 2x. */
+  #dialog .face {
+    flex: none; width: calc(var(--k) * 38px); height: calc(var(--k) * 38px);
+    background: #6e4129; outline: calc(var(--k) * 1px) solid #4e2f1f; image-rendering: pixelated;
+  }
+  #dialog .face[hidden] { display: none; }
+  #dialog .name { color: #ffd77a; font-weight: bold; }
+  #dialog .name:empty { display: none; }
+  #dialog a { color: #ffd77a; }
+  #dialog.big .text { font-size: calc(var(--k) * 16px); color: #ffd77a; font-weight: bold; line-height: 1.2; }
+  #dialog .choices { margin-top: calc(var(--k) * 2px); }
+  #dialog .choices span { display: inline-block; margin-right: calc(var(--k) * 14px); padding-left: calc(var(--k) * 8px); }
+  #dialog .choices span.sel { color: #ffd77a; padding-left: 0; }
+  #dialog .choices span.sel::before { content: "▶"; display: inline-block; width: calc(var(--k) * 8px); }
+  #dialog .next { position: absolute; right: calc(var(--k) * 8px); bottom: calc(var(--k) * 4px); font-size: calc(var(--k) * 6px); animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  #keys { opacity: .85; text-align: center; padding: 0 16px; }
+  kbd { background: #33363d; border-radius: 4px; padding: 1px 6px; font-family: inherit; }
+  /* Backpack: 3x3 grid, same colours as the dialogue box. */
+  #bag {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    background: #8a5434; border: calc(var(--k) * 2px) solid #4e2f1f;
+    box-shadow: inset 0 0 0 calc(var(--k) * 1px) #b27a4f;
+    padding: calc(var(--k) * 6px) calc(var(--k) * 8px) calc(var(--k) * 8px);
+    color: #ffd77a; font-size: calc(var(--k) * 8px); font-weight: bold; text-align: center;
+  }
+  #bag[hidden] { display: none; }
+  #bag .grid { display: grid; grid-template-columns: repeat(3, calc(var(--k) * 36px)); gap: calc(var(--k) * 4px); margin-top: calc(var(--k) * 5px); }
+  #bag .slot {
+    height: calc(var(--k) * 36px); box-sizing: border-box; background: #6e4129;
+    border: calc(var(--k) * 1px) solid #4e2f1f; box-shadow: inset 0 0 0 calc(var(--k) * 1px) #7d4b31;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #bag .slot.sel { border-color: #ffd77a; }
+  #bag .slot canvas { width: calc(var(--k) * 32px); height: calc(var(--k) * 32px); }
+  #bag .caption { margin-top: calc(var(--k) * 5px); width: calc(var(--k) * 116px); min-height: calc(var(--k) * 24px); font-weight: normal; color: #fff3dc; font-size: calc(var(--k) * 7px); text-align: left; }
+  #bag .caption b { color: #ffd77a; }
+  /* Clock panel: set the grandfather clock's time. Same colours as the dialogue box. */
+  #clockui {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); text-align: center;
+    background: #8a5434; border: calc(var(--k) * 2px) solid #4e2f1f; box-shadow: inset 0 0 0 calc(var(--k) * 1px) #b27a4f;
+    padding: calc(var(--k) * 6px) calc(var(--k) * 12px) calc(var(--k) * 7px);
+    color: #ffd77a; font-size: calc(var(--k) * 8px); font-weight: bold;
+  }
+  #clockui[hidden] { display: none; }
+  #clockui .digits { margin: calc(var(--k) * 4px) 0; font-size: calc(var(--k) * 20px); color: #fff3dc; font-variant-numeric: tabular-nums; letter-spacing: calc(var(--k) * 1px); }
+  #clockui .digits span { display: inline-block; padding: 0 calc(var(--k) * 2px); border-bottom: calc(var(--k) * 2px) solid transparent; }
+  #clockui .digits span.sel { color: #ffd77a; border-bottom-color: #ffd77a; }
+  #clockui .hint { font-size: calc(var(--k) * 6px); font-weight: normal; color: #fff3dc; opacity: .85; }
+  #credit { font-size: 12px; opacity: .6; text-align: center; padding: 0 16px; }
+  #credit a { color: inherit; }
+  /* Touch controls: D-pad bottom-left, A/B bottom-right; beside the game in landscape. */
+  #touch { display: none; }
+  body.touch #touch { display: block; }
+  body.touch #keys { display: none; }
+  body.touch { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  body.touch #credit { position: fixed; top: 4px; left: 0; right: 0; }
+  #touch button {
+    position: fixed; touch-action: none; -webkit-tap-highlight-color: transparent;
+    background: #8a5434; color: #fff3dc; border: 3px solid #4e2f1f; box-shadow: inset 0 0 0 2px #b27a4f;
+    font: bold 18px system-ui, sans-serif; padding: 0;
+  }
+  #touch button:active { background: #6e4129; }
+  #dpad button { width: 52px; height: 52px; border-radius: 8px; }
+  #dpad [data-dir="up"]    { left: 72px;  bottom: 128px; }
+  #dpad [data-dir="left"]  { left: 18px;  bottom: 74px; }
+  #dpad [data-dir="right"] { left: 126px; bottom: 74px; }
+  #dpad [data-dir="down"]  { left: 72px;  bottom: 20px; }
+  #btnA, #btnB { border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.1; }
+  #btnA { width: 76px; height: 76px; right: 20px; bottom: 70px; font-size: 24px; }
+  #btnB { width: 60px; height: 60px; right: 108px; bottom: 26px; }
+  #touch small { font-size: 11px; font-weight: normal; }
+  @media (orientation: landscape) {
+    #dpad [data-dir="up"]    { bottom: calc(50% + 28px); }
+    #dpad [data-dir="left"], #dpad [data-dir="right"] { bottom: calc(50% - 26px); }
+    #dpad [data-dir="down"]  { bottom: calc(50% - 80px); }
+    #btnA { bottom: calc(50% - 8px); }
+    #btnB { right: 46px; bottom: calc(50% - 92px); }
+  }
+  /* Title prompt (needed anyway: browsers only allow sound after a key press). */
+  #title {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: calc(var(--k) * 4px); color: #fff3dc; font-size: calc(var(--k) * 10px); text-shadow: 0 calc(var(--k) * 1px) 0 #000;
+  }
+  #title[hidden] { display: none; }
+  #title .press { animation: blink 1.2s steps(2) infinite; }
+  #title .small { font-size: calc(var(--k) * 6px); opacity: .8; }
+</style>
+</head>
+<body>
+<div id="keys"><kbd>↑↓←→</kbd> / <kbd>WASD</kbd> 移动 · <kbd>空格</kbd> 互动 · <kbd>B</kbd> 打开背包 · <kbd>M</kbd> 音乐开关</div>
+<div id="stage">
+  <canvas id="c" width="416" height="320"></canvas>
+  <div id="dialog" hidden>
+    <canvas class="face" width="19" height="19"></canvas>
+    <div><div class="name"></div><div class="text"></div><div class="choices"></div></div>
+    <div class="next">▼</div>
+  </div>
+  <div id="bag" hidden>背包<div class="grid"></div><div class="caption"></div></div>
+  <div id="clockui" hidden>时钟<div class="digits"><span class="hh"></span>:<span class="mm"></span></div><div class="hint">←→ 切换 · ↑↓ 调整 · 空格 确定 · Esc 取消</div></div>
+  <div id="title" hidden><div class="press">按 空格 开始</div><div class="small">过场中按 Esc 可以跳过</div></div>
+</div>
+<div id="credit">Assets: <a href="https://starmixu.itch.io/little-dreamyland-asset-pack" target="_blank" rel="noopener">Little Dreamyland</a> by Starmixu &amp; Utaskuas</div>
+<div id="touch">
+  <div id="dpad">
+    <button data-dir="up" aria-label="上">▲</button>
+    <button data-dir="left" aria-label="左">◀</button>
+    <button data-dir="right" aria-label="右">▶</button>
+    <button data-dir="down" aria-label="下">▼</button>
+  </div>
+  <button id="btnA">A<small>互动</small></button>
+  <button id="btnB">B<small>背包</small></button>
+</div>
+<script src="data.js"></script>
+<script>
+"use strict";
+// Everything the game needs lives in this folder (built by ../build_scenes.ps1).
+const TILE = 16, W = 416, H = 320;
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+ctx.imageSmoothingEnabled = false;
+
+// Edge exits: where the path leaves the screen, and where the bunny appears in the next scene.
+const EXITS = {
+  village: [
+    { side: "right",  from: 128, to: 160, go: "lakeside", at: [10, 58], dir: "right" },
+    { side: "bottom", from: 176, to: 208, go: "forest",   at: [200, 12], dir: "down" },
+  ],
+  lakeside: [
+    { side: "left", from: 32, to: 80, go: "village", at: [W - 10, 146], dir: "left" },
+  ],
+  forest: [
+    { side: "top", from: 176, to: 224, go: "village", at: [192, H - 4], dir: "up" },
+  ],
+};
+// Zone exits: stepping into the rect changes scene (the red house doorway).
+const ZONES = {
+  redhouse: [{ rect: [200, 214, 16, 12], go: "village", at: [96, 106], dir: "down" }],
+};
+const START = { scene: "village", x: 40, y: 142, dir: "right" };
+
+// Red house door and the gift inside.
+const DOOR_NEEDS_KEY = true;
+const RED_DOOR = { x: 96, y: 96 };
+const GIFT = { x: 208, y: 162 };
+// Grandfather clock on the back wall (bottom-centre). Setting it to 12:03 darkens the room and unlocks the gift.
+const CLOCK_POS = { x: 206, y: 125 }, MAGIC_TIME = [12, 3];
+const clockTime = { h: 7, m: 0 };
+const GIFT_URL = "https://www.youtube.com/watch?v=QDia3e12czc";
+
+// ---------- items ----------
+// icon = index in items.png (16x16 each, drawn by build_scenes.ps1)
+const ITEMS = {
+  yuba_wet:     { icon: 0, name: "湿腐竹",    desc: "从井里捞上来的，湿答答的。" },
+  yuba_crisp:   { icon: 1, name: "脆腐竹",    desc: "烤得金黄酥脆，咔嚓咔嚓。" },
+  coupon:       { icon: 2, name: "KFC优惠券", desc: "可可吃素，所以送给了你。" },
+  shoe_slobber: { icon: 3, name: "口水鞋",    desc: "咯咯吐出来的，黏黏的。" },
+  shoe_wet:     { icon: 4, name: "湿鞋子",    desc: "在湖边的箱子里捡到的。" },
+  boots:        { icon: 5, name: "登山鞋",    desc: "两只鞋烤出来的，有股烟熏味。" },
+  coin:         { icon: 6, name: "金币",      desc: "灰灰从湖里钓上来的。" },
+  carrot:       { icon: 7, name: "胡萝卜",    desc: "咕咕商店出品，一枚金币一根。" },
+  broom:        { icon: 8, name: "扫把",      desc: "哞哞吐出来的，有点黏。" },
+  key:          { icon: 9, name: "钥匙",      desc: "桃桃给的，红房子的钥匙。" },
+};
+const inv = [];                 // item ids, max 9
+const flags = {};               // story progress
+const has = id => inv.includes(id);
+function gain(id) { if (!has(id)) inv.push(id); }
+function lose(id) { const i = inv.indexOf(id); if (i >= 0) inv.splice(i, 1); }
+
+// Idle creatures. Sheets are 48x48 frames, rows = up/right/left/down, feet on frame row 31.
+const KINDS = {
+  chicken:     { src: "chicken_idle.png", frames: 8, fps: 8, solid: [10, 4], shadow: 14, top: 13, face: [14, 14] },
+  cow:         { src: "cow_idle.png", frames: 8, fps: 5, solid: [22, 6], shadow: 28, top: 17, ax: { 1: 28, 2: 19 } },
+  bunny_pink:  { src: "bunny_pink_idle.png",  frames: 5, fps: 6, solid: [10, 5], shadow: 16 },
+  bunny_brown: { src: "bunny_brown_idle.png", frames: 5, fps: 6, solid: [10, 5], shadow: 16 },
+  bunny_gray:  { src: "bunny_gray_idle.png",  frames: 5, fps: 6, solid: [10, 5], shadow: 16 },
+  xiaocai:     { src: "bunny_idle.png", frames: 5, fps: 6 },
+};
+const NPCS = {
+  village: [
+    { id: "gugu",   name: "咕咕", kind: "chicken", row: 1, x: 238, y: 100 },
+    { id: "gege",   name: "咯咯", kind: "chicken", row: 3, x: 318, y: 102 },
+    { id: "taotao", name: "桃桃", kind: "bunny_pink", row: 3, x: 267, y: 250 },
+  ],
+  lakeside: [
+    { id: "keke",   name: "可可", kind: "bunny_brown", row: 3, x: 196, y: 100 },
+    // rod: hand position -> rod tip -> where the line meets the water (left of the pier)
+    { id: "huihui", name: "灰灰", kind: "bunny_gray", row: 3, x: 186, y: 262, rod: { hand: [181, 255], tip: [163, 238], water: [163, 258] } },
+  ],
+  forest: [
+    { id: "moumou", name: "哞哞", kind: "cow", row: 2, x: 368, y: 150 },
+  ],
+};
+const TALK_RANGE = 24;
+
+// ---------- dialogue scripts ----------
+// Page: { name, face (KINDS key | "?" | "item:<id>" | null), text, sfx, link, big, choices + onChoose }
+const ME = "小菜", CALLER = "？？？";
+const say = (text, extra) => Object.assign({ name: ME, face: "xiaocai", text }, extra);
+const caller = text => ({ name: CALLER, face: "?", text });
+const narr = (text, extra) => Object.assign({ name: "", face: null, text }, extra);
+const got = id => ({ name: "", face: "item:" + id, text: `获得了【${ITEMS[id].name}】！`, sfx: "get" });
+const gave = id => ({ name: "", face: "item:" + id, text: `交出了【${ITEMS[id].name}】。` });
+// A page that asks a question: the options are 小菜's replies, branches[i] are the pages that follow option i.
+const ask = (page, options, branches) => Object.assign(page, { choices: options, onChoose: i => branches[i] });
+
+const INTRO = [
+  narr("（铃铃铃——铃铃铃——）", { sfx: "ring", name: "未知来电", face: "?" }),
+  narr("（咔哒）", { sfx: "click" }),
+  say("喂？你好？"),
+  caller("喂喂，是小菜吗？"),
+  caller("你的礼物到了！"),
+  say("礼物？谁送的？"),
+  caller("我送的。也可能是别人送的，这种东西很难说。"),
+  say("……你到底是谁啊？"),
+  caller("……"),
+  caller("礼物放在红房子里了，就是屋顶红红的、门小小的那间。"),
+  say("那是谁的家？"),
+  caller("我不知道。"),
+  say("你不知道？？"),
+  caller("我不知道。"),
+  say("……"),
+  caller("……"),
+  caller("总之你快去找吧！"),
+  say("等等，我还没问——"),
+  narr("（嘟——嘟——嘟——）", { sfx: "hangup" }),
+  say("……挂了。"),
+  say("好吧，去红房子看看。"),
+];
+
+// Talking opens a menu: 你好！ / 给「item」 (only while you carry what they want) / 再见！
+// open: the line shown with the menu; wants: item id; hello(N): chat pages; give(N): trade pages (applies the trade).
+const TALK = {
+  gugu: {
+    open: "咕咕？", wants: "coin",
+    hello: N => flags.gugu ? [N("下次再来光顾咕咕商店～")]
+      : [N("咕咕！我这里有新鲜的胡萝卜，一枚金币一根，童叟无欺。"), N("没钱？那你看看就好，别摸。")],
+    give(N) {
+      lose("coin"); gain("carrot"); flags.gugu = true;
+      return [gave("coin"), N("金币！闪闪发光的金币！"), N("成交！胡萝卜给你，记得趁新鲜吃……或者送人。"), got("carrot")];
+    },
+  },
+  gege: {
+    open: "咯咯哒？", wants: "coupon",
+    hello: N => flags.gege ? [N("别问我鞋子是从哪来的。")]
+      : [N("你有KFC优惠卷吗？"), say("你要那个干什么？"), N("我要去...呃...探望朋友，我朋友上个月去那里打工。"),
+         say("那里对你来说太危险了。"), N("为什么？"), say("...反正很危险。"), N("其实我是去考察同行的。"), say("..蛤？")],
+    give(N) {
+      lose("coupon"); gain("shoe_slobber"); flags.gege = true;
+      return [gave("coupon"), N("KFC优惠券！！"), N("好东西好东西……作为交换，这个给你。"),
+              narr("（咯咯吐出了一只沾满口水的鞋）"), got("shoe_slobber")];
+    },
+  },
+  taotao: {
+    open: "嗨～", wants: "broom",
+    hello: N => flags.taotao ? [N("红房子就在左上边，快去吧！")]
+      : [N("我们公司八卦很精彩。"), say("蛤？"),
+         ask(N("你要不要听？"), ["要", "不要"], [
+           [N("你真八卦。"), say("..."), N("我今日辞职，太开心了，和朋友一起玩了礼炮。"),
+            N("结果现在家里满地彩带，好难清理。"), N("我家的扫把不见了，你可以帮我找找吗？")],
+           [N("哦哦。")]])],
+    give(N) {
+      lose("broom"); gain("key"); flags.taotao = true;
+      return [gave("broom"), N("啊！扫把！虽然……黏黏的？"), N("算了，能扫就行！谢谢你～"),
+              N("这个给你，是红房子的钥匙。"), got("key"), N("为什么在我这里？我也不知道。")];
+    },
+  },
+  keke: {
+    open: "嗯？", wants: "yuba_crisp",
+    hello: N => flags.keke ? [N("咔嚓咔嚓……真好吃。")]
+      : has("yuba_wet") ? [N("你身上怎么有股湿腐竹的味道？"), N("我只吃脆的。听说森林里有篝火，烤一烤说不定就脆了。")]
+      : [ask(N("我爱吃腐竹。你爱吃腐竹吗？"), ["爱吃！", "不爱吃"], [
+           [N("真有品！"), N("我爱吃腐竹，吃腐竹我就会很开心。"), N("尤其是吃着吃着喷在朋友身上，那就更开心了。"),
+            N("也可以喷点炸鸡菊花茶之类的！"), say("？"), N("你去给我找腐竹来吧！找来了我就给你KFC优惠卷。")],
+           [N("没品的家伙。")]])],
+    give(N) {
+      lose("yuba_crisp"); gain("coupon"); flags.keke = true;
+      return [gave("yuba_crisp"), N("脆脆的腐竹！就是这个味道！"), N("我没什么能回报你的……这张KFC优惠券送你吧，我吃素。"), got("coupon")];
+    },
+  },
+  huihui: {
+    open: "嘘……小声点。", wants: "boots",
+    hello: N => flags.huihui ? [N("下次带你去湖中间的小岛看看！")]
+      : has("shoe_wet") && has("shoe_slobber") ? [N("你带着两只不一样的鞋……一只湿、一只黏。"), N("要不拿去火边烤一烤？")]
+      : has("shoe_wet") || has("shoe_slobber") ? [N("一只鞋可没法爬山哦。")]
+      : [N("我要去爬山啦！"), say("哪座山呀？"), N("去给我找鞋子！"), say("什么？"),
+         ask(N("鞋子！"), ["你有点没礼貌...", "哦..."], [
+           [N("我知道呀。"), say("？"), N("请帮我找鞋子吧！")],
+           [N("去吧！")]])],
+    give(N) {
+      lose("boots"); gain("coin"); flags.huihui = true;
+      return [gave("boots"), N("哇！登山鞋！虽然……闻起来有点烟熏味。"), N("这枚金币是我刚钓上来的，送给你！"), got("coin")];
+    },
+  },
+  moumou: {
+    open: "哞？", wants: "carrot",
+    hello: N => flags.moumou ? [N("哞～（满足）")]
+      : [N("哞~"), ask(N("你喜欢吃胡萝卜吗？"), ["喜欢", "不喜欢"], [
+           [N("我也是，请你给我找一根胡萝卜吧！")],
+           [N("可你是兔子啊？"), say("刻板印象。")]])],
+    give(N) {
+      lose("carrot"); gain("broom"); flags.moumou = true;
+      return [gave("carrot"), N("胡萝卜！哞哞哞！"), narr("（嚼嚼嚼）"), N("谢谢你，这个回礼给你。"),
+              narr("（哞哞吐出了一把扫把）"), got("broom")];
+    },
+  },
+};
+
+// Places you can press Space at (besides creatures), per scene.
+const SPOTS = {
+  village: [
+    { x: 83, y: 218, top: 28, range: 22, use: useWell },
+    { x: RED_DOOR.x, y: RED_DOOR.y + 8, top: 26, range: 14, facing: "up", use: useDoor },
+  ],
+  lakeside: [
+    { x: 147, y: 200, top: 18, range: 24, use: useCrates },
+    { x: 243, y: 146, top: 22, range: 20, use: useBoard },
+  ],
+  forest: [
+    { x: 200, y: 146, top: 22, range: 22, use: useCampfire },
+  ],
+  redhouse: [
+    { x: GIFT.x, y: GIFT.y, top: 16, range: 22, use: useGift },
+    { x: CLOCK_POS.x, y: CLOCK_POS.y + 5, top: 32, range: 16, facing: "up", use: openClock },
+  ],
+};
+
+function useWell() {
+  if (flags.well) return openDialog([narr("井水清清凉凉的，什么都没有了。")]);
+  flags.well = true; gain("yuba_wet");
+  openDialog([narr("转动辘轳，从井里捞上来了什么东西……"), say("是一团湿漉漉的腐竹？！"), got("yuba_wet")]);
+}
+function useCrates() {
+  if (flags.crates) return openDialog([narr("箱子里空空的。")]);
+  flags.crates = true; gain("shoe_wet");
+  openDialog([narr("箱子里有一只鞋子，湿透了。"), say("……先拿着吧。"), got("shoe_wet")]);
+}
+function useCampfire() {
+  const pages = [];
+  if (has("yuba_wet")) {
+    lose("yuba_wet"); gain("yuba_crisp");
+    pages.push(narr("把湿腐竹架在火上烤……"), narr("（滋滋——）"), got("yuba_crisp"));
+  }
+  if (has("shoe_wet") && has("shoe_slobber")) {
+    lose("shoe_wet"); lose("shoe_slobber"); gain("boots");
+    pages.push(narr("把两只鞋子一起放进火里烤……"), narr("（滋滋滋——一股奇妙的味道飘了出来）"),
+               say("两只鞋子……变成了一双登山鞋？！"), got("boots"));
+  } else if (has("shoe_wet") || has("shoe_slobber")) {
+    pages.push(say("只有一只鞋……还是凑齐一双再来烤吧。"));
+  }
+  if (!pages.length) pages.push(narr("篝火噼里啪啦地烧着，暖洋洋的。"));
+  openDialog(pages);
+}
+function useBoard() {
+  openDialog([
+    narr("布告栏上贴着几张告示。"),
+    { name: "本地新闻", face: null, text: "有居民称撞见腐竹跳井，但拒绝提供详情。" },
+    { name: "治安快讯", face: null, text: "鞋子失窃，现场遗留可疑黏糊液体。" },
+    { name: "民生调查", face: null, text: "牛奶一股灰尘味？有关部门调查中……" },
+    narr("其中一张告示的角翘起来了，底下似乎有什么……"),
+    narr("要撕开吗？", {
+      choices: ["撕开", "不撕"],
+      onChoose: i => i === 0 ? [narr("（嘶啦——）", { sfx: "rip" }), narr("你是笨猪！", { big: true })]
+                             : [say("还是不要乱撕东西好了。")],
+    }),
+  ]);
+}
+function useDoor() {
+  const enterHouse = () => { SFX.door(); pending = { go: "redhouse", at: [208, 196], dir: "up" }; };
+  if (!DOOR_NEEDS_KEY || flags.doorOpen) return enterHouse();
+  if (!has("key")) return openDialog([narr("门锁着……"), say("好像需要一把钥匙。")]);
+  flags.doorOpen = true;
+  openDialog([say("试试桃桃给的钥匙……"), narr("（咔嚓）", { sfx: "click" }), narr("门开了！")], { onEnd: enterHouse });
+}
+function useGift() {
+  player.dir = faceRow(player.x, player.y, GIFT.x, GIFT.y);
+  if (!flags.clockSet) return openDialog([narr("吉时未到……")]);
+  const first = !flags.giftOpen;
+  if (first) { flags.giftOpen = true; SFX.open(); }
+  openDialog([
+    say(first ? "这就是礼物吗？打开看看……" : "盒子里还是那张小卡片。"),
+    say("卡片上写着一个网址……"),
+    narr("▶ 按空格打开链接", { link: GIFT_URL }),
+  ]);
+}
+
+// ---------- clock panel ----------
+const clockEl = document.getElementById("clockui");
+const clockHH = clockEl.querySelector(".hh"), clockMM = clockEl.querySelector(".mm");
+let clockEdit = null; // { h, m, field: 0 hour | 1 minute }
+function clockOpen() { return !clockEl.hidden; }
+function openClock() {
+  clockEdit = { h: clockTime.h, m: clockTime.m, field: 0 };
+  clockEl.hidden = false; renderClock();
+}
+function renderClock() {
+  clockHH.textContent = String(clockEdit.h).padStart(2, "0");
+  clockMM.textContent = String(clockEdit.m).padStart(2, "0");
+  clockHH.classList.toggle("sel", clockEdit.field === 0);
+  clockMM.classList.toggle("sel", clockEdit.field === 1);
+}
+function clockKey(dir) {
+  if (dir === "left" || dir === "right") clockEdit.field = 1 - clockEdit.field;
+  else {
+    const d = dir === "up" ? 1 : -1;
+    if (clockEdit.field === 0) clockEdit.h = (clockEdit.h - 1 + d + 12) % 12 + 1;   // 1..12
+    else clockEdit.m = (clockEdit.m + d + 60) % 60;
+  }
+  SFX.select(); renderClock();
+}
+function closeClock(apply) {
+  clockEl.hidden = true;
+  if (!apply) return;
+  clockTime.h = clockEdit.h; clockTime.m = clockEdit.m;
+  if (!flags.clockSet && clockTime.h === MAGIC_TIME[0] && clockTime.m === MAGIC_TIME[1]) {
+    flags.clockSet = true;
+    openDialog([narr("（当——当——当——）", { sfx: "chime" }), narr("房间突然暗了下来……"), narr("礼物盒发出了光！")]);
+  } else openDialog([narr("（咔哒）", { sfx: "click" }), narr("什么也没有发生。")]);
+}
+
+// ---------- sound (synthesised with Web Audio, no files) ----------
+let actx = null, master = null;
+function audio() {
+  if (!actx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    actx = new AC(); master = actx.createGain(); master.gain.value = 0.5; master.connect(actx.destination);
+  }
+  if (actx.state === "suspended") actx.resume();
+  return actx;
+}
+function tone(freq, start, dur, type = "sine", vol = 0.15) {
+  const a = audio(); if (!a) return;
+  const t = a.currentTime + start, o = a.createOscillator(), g = a.createGain();
+  o.type = type; o.frequency.value = freq;
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + 0.005);
+  g.gain.setValueAtTime(vol, t + dur - 0.01); g.gain.linearRampToValueAtTime(0, t + dur);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.02);
+}
+function noise(start, dur, vol = 0.2, hp = 1500) {
+  const a = audio(); if (!a) return;
+  const buf = a.createBuffer(1, Math.ceil(a.sampleRate * dur), a.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+  const s = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain();
+  f.type = "highpass"; f.frequency.value = hp; g.gain.value = vol;
+  s.buffer = buf; s.connect(f); f.connect(g); g.connect(master); s.start(a.currentTime + start);
+}
+let ringTimer = null;
+function ringBurst(start) {   // telephone bell: two tones trilled at ~20 Hz
+  for (let i = 0; i < 16; i++) { tone(440, start + i * 0.025, 0.02, "square", 0.05); tone(480, start + i * 0.025, 0.02, "square", 0.05); }
+}
+const SFX = {
+  ring() { SFX.stop(); const cycle = () => { ringBurst(0); ringBurst(0.55); }; cycle(); ringTimer = setInterval(cycle, 2200); },
+  click() { SFX.stop(); noise(0, 0.03, 0.35, 2500); tone(140, 0, 0.06, "triangle", 0.2); },
+  hangup() { SFX.stop(); for (let i = 0; i < 3; i++) { tone(480, i * 0.75, 0.4, "sine", 0.1); tone(620, i * 0.75, 0.4, "sine", 0.1); } },
+  door() { noise(0, 0.08, 0.15, 400); tone(90, 0, 0.12, "triangle", 0.25); },
+  open() { [523, 659, 784, 1047].forEach((f, i) => tone(f, i * 0.09, 0.14, "triangle", 0.14)); },
+  get() { tone(784, 0, 0.1, "triangle", 0.14); tone(1175, 0.1, 0.18, "triangle", 0.14); },
+  rip() { noise(0, 0.25, 0.3, 1800); },
+  chime() { for (let i = 0; i < 3; i++) { pluck(392, i * 0.8, 0.26); pluck(784, i * 0.8, 0.07); } },
+  select() { tone(660, 0, 0.03, "square", 0.03); },
+  blip(name) { tone(name === CALLER ? 260 : 820, 0, 0.03, "square", 0.025); },
+  stop() { if (ringTimer) { clearInterval(ringTimer); ringTimer = null; } },
+};
+
+// Happy Birthday to You (public-domain melody) in a music-box voice. Returns its length in seconds.
+const NOTE = { G4: 392, A4: 440, B4: 493.88, C5: 523.25, D5: 587.33, E5: 659.25, F5: 698.46, G5: 783.99 };
+const BIRTHDAY = [ // [note, beats]
+  ["G4", .75], ["G4", .25], ["A4", 1], ["G4", 1], ["C5", 1], ["B4", 2],
+  ["G4", .75], ["G4", .25], ["A4", 1], ["G4", 1], ["D5", 1], ["C5", 2],
+  ["G4", .75], ["G4", .25], ["G5", 1], ["E5", 1], ["C5", 1], ["B4", 1], ["A4", 2],
+  ["F5", .75], ["F5", .25], ["E5", 1], ["C5", 1], ["D5", 1], ["C5", 3],
+];
+function pluck(freq, start, vol = 0.18) {
+  const a = audio(); if (!a) return;
+  const t = a.currentTime + start;
+  for (const [mul, v, type] of [[1, vol, "triangle"], [2, vol * 0.35, "sine"], [4, vol * 0.08, "sine"]]) {
+    const o = a.createOscillator(), g = a.createGain();
+    o.type = type; o.frequency.value = freq * mul;
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0008, t + 1.1);
+    o.connect(g); g.connect(master); o.start(t); o.stop(t + 1.15);
+  }
+}
+function playBirthday() {
+  const beat = 0.5; let t = 0.4;
+  for (const [n, b] of BIRTHDAY) { pluck(NOTE[n], t); t += b * beat; }
+  return t + 0.6;
+}
+
+// ---------- background music: a 16-bar loop in C, synthesised and scheduled ahead ----------
+const BGM_BPM = 96, BGM_VOL = 0.45;
+const CHORDS = { // [bass root, bass fifth, arpeggio triad...]
+  C: ["C3", "G2", "C4", "E4", "G4"], Am: ["A2", "E2", "A3", "C4", "E4"], F: ["F2", "C3", "A3", "C4", "F4"],
+  G: ["G2", "D3", "G3", "B3", "D4"], Dm: ["D3", "A2", "A3", "D4", "F4"], Em: ["E2", "B2", "G3", "B3", "E4"],
+  G7: ["G2", "D3", "G3", "B3", "F4"],
+};
+const BGM_BARS = [ // [chords (one per bar, or two half-bars), melody [note|null, beats]...]
+  [["C"],       [["E5", 1], ["G5", 1], ["E5", .5], ["D5", .5], ["C5", 1]]],
+  [["Am"],      [["A4", 1], ["C5", 1], ["E5", 2]]],
+  [["F"],       [["F5", 1], ["E5", .5], ["D5", .5], ["C5", 1], ["A4", 1]]],
+  [["G"],       [["B4", 1], ["D5", 1], ["G4", 2]]],
+  [["C"],       [["E5", 1], ["G5", 1], ["A5", .5], ["G5", .5], ["E5", 1]]],
+  [["Am"],      [["C5", 1], ["E5", 1], ["A5", 2]]],
+  [["Dm", "G"], [["F5", 1], ["A5", 1], ["G5", 1], ["B4", 1]]],
+  [["C"],       [["C5", 2], [null, 2]]],
+  [["F"],       [["A4", .5], ["C5", .5], ["F5", 1], ["E5", 1], ["D5", 1]]],
+  [["G"],       [["D5", .5], ["B4", .5], ["G4", 1], ["B4", 1], ["D5", 1]]],
+  [["Em"],      [["E5", 1], ["G5", 1], ["B4", 1], ["E5", 1]]],
+  [["Am"],      [["C5", 1], ["A4", 1], ["E5", 2]]],
+  [["F"],       [["F5", 1], ["A5", 1], ["G5", .5], ["F5", .5], ["E5", 1]]],
+  [["G"],       [["D5", 1], ["G5", 1], ["F5", .5], ["E5", .5], ["D5", 1]]],
+  [["C"],       [["E5", 1], ["C5", 1], ["G4", 1], ["C5", 1]]],
+  [["G7"],      [["D5", 2], ["B4", 1], ["G4", 1]]],
+];
+function hz(name) {
+  const m = /^([A-G])(#?)(\d)$/.exec(name), semi = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[m[1]] + (m[2] ? 1 : 0);
+  return 440 * Math.pow(2, (semi + 12 * (+m[3] + 1) - 69) / 12);
+}
+// Flatten to [{beat, voice, note, beats}], 64 beats per loop.
+const BGM_EVENTS = (() => {
+  const ev = [];
+  BGM_BARS.forEach(([chords, mel], bar) => {
+    const b0 = bar * 4, half = 4 / chords.length;
+    chords.forEach((name, i) => {
+      const c = CHORDS[name], start = b0 + i * half;
+      ev.push({ beat: start, voice: "bass", note: c[0], beats: Math.min(2, half) * 0.9 });
+      if (half === 4) ev.push({ beat: start + 2, voice: "bass", note: c[1], beats: 1.8 });
+      for (let k = 0; k < half * 2; k++) ev.push({ beat: start + k / 2, voice: "arp", note: c[2 + [0, 1, 2, 1][k % 4]], beats: 0.5 });
+    });
+    let t = b0;
+    for (const [note, beats] of mel) { if (note) ev.push({ beat: t, voice: "lead", note, beats }); t += beats; }
+  });
+  return ev.sort((a, b) => a.beat - b.beat);
+})();
+let bgm = null; // { gain, timer, next, loopStart, muted }
+function bgmVoice(e, t, spb) {
+  const a = actx, o = a.createOscillator(), g = a.createGain(), f = hz(e.note), dur = e.beats * spb;
+  if (e.voice === "lead") {
+    const lp = a.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 2400;
+    o.type = "square"; o.frequency.value = f;
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.05, t + 0.01);
+    g.gain.linearRampToValueAtTime(0.032, t + 0.12); g.gain.setValueAtTime(0.032, t + dur - 0.06); g.gain.linearRampToValueAtTime(0, t + dur);
+    o.connect(lp); lp.connect(g);
+  } else {
+    o.type = "triangle"; o.frequency.value = f;
+    const v = e.voice === "bass" ? 0.13 : 0.035, end = e.voice === "bass" ? t + dur : t + 0.28;
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v, t + 0.008); g.gain.exponentialRampToValueAtTime(0.001, end);
+    o.connect(g);
+  }
+  g.connect(bgm.gain); o.start(t); o.stop(t + dur + 0.05);
+}
+function startBgm() {
+  const a = audio(); if (!a || bgm) return;
+  const gain = a.createGain(); gain.gain.value = 0; gain.connect(master);
+  gain.gain.setTargetAtTime(BGM_VOL, a.currentTime, 0.6);   // fade in
+  bgm = { gain, next: 0, loopStart: a.currentTime + 0.2, muted: false };
+  const spb = 60 / BGM_BPM, loopLen = 64 * spb;
+  bgm.timer = setInterval(() => {   // schedule whatever falls in the next 0.3 s
+    while (bgm.loopStart + BGM_EVENTS[bgm.next].beat * spb < a.currentTime + 0.3) {
+      const e = BGM_EVENTS[bgm.next], t = bgm.loopStart + e.beat * spb;
+      if (t > a.currentTime - 0.05) bgmVoice(e, Math.max(a.currentTime, t), spb);   // skip notes missed while the tab was in the background
+      if (++bgm.next === BGM_EVENTS.length) { bgm.next = 0; bgm.loopStart += loopLen; }
+    }
+  }, 100);
+}
+function bgmLevel(v, at, smooth) { if (bgm) bgm.gain.gain.setTargetAtTime(bgm.muted ? 0 : v, at, smooth); }
+function toggleMusic() { if (!bgm) return; bgm.muted = !bgm.muted; bgmLevel(BGM_VOL, actx.currentTime, 0.1); }
+
+// Confetti rain while the song plays.
+const CONFETTI_COLORS = ["#F27575", "#FBC57C", "#85C3D7", "#AFC259", "#F7C6D0", "#fff3dc", "#c79ae8"];
+let confetti = [], partyLeft = 0;
+function startParty() {
+  partyLeft = playBirthday();
+  if (bgm) { bgmLevel(0, actx.currentTime, 0.15); bgmLevel(BGM_VOL, actx.currentTime + partyLeft, 0.8); } // quiet during the song
+}
+function updateConfetti(dt) {
+  if (partyLeft > 0) {
+    partyLeft -= dt;
+    for (let n = Math.floor(80 * dt + Math.random()); n > 0; n--) confetti.push({
+      x: Math.random() * W, y: -4 - Math.random() * 12, vy: 28 + Math.random() * 30, sway: 14 + Math.random() * 18,
+      w: 2 + Math.random() * 3, t: Math.random() * 6, c: CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)],
+    });
+  }
+  for (const p of confetti) { p.t += dt; p.y += p.vy * dt; p.x += Math.sin(p.t * p.w) * p.sway * dt; }
+  confetti = confetti.filter(p => p.y < H + 4);
+}
+function drawConfetti() {
+  for (const p of confetti) {
+    const flip = Math.round(Math.abs(Math.cos(p.t * 5)) * 2) + 1; // flutters between 1 and 3 px wide
+    ctx.fillStyle = p.c; ctx.fillRect(Math.round(p.x), Math.round(p.y), flip, 2);
+  }
+}
+
+// ---------- assets ----------
+const images = {};
+function load(path) {
+  if (!images[path]) {
+    const img = new Image();
+    img.src = encodeURI(path);
+    images[path] = new Promise((ok, fail) => {
+      img.onload = () => ok(img);
+      img.onerror = () => fail(new Error("无法加载 " + path));
+    });
+  }
+  return images[path];
+}
+const sheets = {};
+async function loadAll() {
+  const paths = new Set();
+  for (const s of Object.values(SCENES)) {
+    paths.add(s.ground);
+    for (const o of s.objects) for (const op of o.ops) if (op[0] !== "#") paths.add("atlas.png");
+  }
+  paths.add("bunny_idle.png");
+  paths.add("bunny_run.png");
+  paths.add("shadow.png");
+  paths.add("items.png");
+  paths.add("clock.png");
+  for (const k of Object.values(KINDS)) paths.add(k.src);
+  await Promise.all([...paths].map(async p => { sheets[p] = await load(p); }));
+}
+
+// ---------- state ----------
+const DIR_ROW = { up: 0, right: 1, left: 2, down: 3 };
+const SPEED = 72; // px per second
+const player = { x: START.x, y: START.y, dir: START.dir, moving: false, t: 0 };
+let scene = null, sceneKey = "", npcs = [], solids = [];
+let fade = 0, pending = null, showBoxes = false;
+let mode = "loading"; // loading -> title -> intro -> play
+
+function enter(key, x, y, dir) {
+  // Coming out of the red house after opening the gift link: confetti + birthday song, once.
+  if (sceneKey === "redhouse" && key === "village" && flags.linkOpened && !flags.party) { flags.party = true; startParty(); }
+  sceneKey = key; scene = SCENES[key];
+  npcs = (NPCS[key] || []).map(n => ({ ...n, k: KINDS[n.kind], phase: Math.random() * 10 }));
+  solids = scene.solids.concat(npcs.map(n => [n.x - n.k.solid[0] / 2, n.y - n.k.solid[1], n.k.solid[0], n.k.solid[1]]));
+  if (key === "redhouse") solids.push([GIFT.x - 8, GIFT.y - 7, 16, 7], [CLOCK_POS.x - 7, CLOCK_POS.y - 5, 14, 6]);
+  player.x = x; player.y = y; player.dir = dir;
+  closeDialog();
+}
+
+// ---------- dialogue ----------
+const dlgEl = document.getElementById("dialog");
+const dlgName = dlgEl.querySelector(".name"), dlgText = dlgEl.querySelector(".text"), dlgNext = dlgEl.querySelector(".next");
+const dlgChoices = dlgEl.querySelector(".choices");
+const faceEl = dlgEl.querySelector(".face"), faceCtx = faceEl.getContext("2d");
+faceCtx.imageSmoothingEnabled = false;
+const FACE = 19; // portrait crop size; default crop origin [14, 12] in the front-facing idle frame
+const TYPE_SPEED = 30; // characters per second
+let dialog = null; // { pages, page, chars, sel, npc, onEnd }
+
+function faceRow(fromX, fromY, toX, toY) {
+  const dx = toX - fromX, dy = toY - fromY;
+  return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "right" : "left") : (dy > 0 ? "down" : "up");
+}
+function openDialog(pages, opts = {}) {
+  dialog = { pages, page: 0, chars: 0, sel: 0, npc: opts.npc || null, onEnd: opts.onEnd || null, phase: opts.npc ? opts.npc.phase : 0 };
+  dlgEl.classList.toggle("center", !!opts.center);
+  dlgEl.hidden = false;
+  showPage();
+}
+function showPage() {
+  const p = dialog.pages[dialog.page];
+  dlgName.textContent = p.name || "";
+  faceEl.hidden = !p.face;
+  dlgEl.classList.toggle("big", !!p.big);
+  if (p.sfx) SFX[p.sfx]();
+  dialog.chars = 0; dialog.blipAt = 0; dialog.sel = 0;
+  renderDialog();
+}
+function closeDialog() {
+  SFX.stop();
+  if (dialog && dialog.npc && dialog.npc.homeRow !== undefined) dialog.npc.row = dialog.npc.homeRow;
+  const end = dialog && dialog.onEnd;
+  dialog = null;
+  dlgEl.hidden = true;
+  dlgEl.classList.remove("center", "big");
+  if (end) end();
+}
+const typed = () => dialog.chars >= dialog.pages[dialog.page].text.length;
+function renderDialog() {
+  const p = dialog.pages[dialog.page], shown = p.text.slice(0, Math.floor(dialog.chars));
+  if (p.link) {
+    dlgText.textContent = "";
+    const a = document.createElement("a");
+    a.href = p.link; a.target = "_blank"; a.rel = "noopener"; a.textContent = shown;
+    a.onclick = () => { flags.linkOpened = true; };
+    dlgText.appendChild(a);
+  } else dlgText.textContent = shown;
+  dlgChoices.innerHTML = "";
+  if (p.choices && typed()) p.choices.forEach((c, i) => {
+    const s = document.createElement("span");
+    s.textContent = c; if (i === dialog.sel) s.className = "sel";
+    dlgChoices.appendChild(s);
+  });
+  dlgNext.style.visibility = typed() && !p.choices ? "visible" : "hidden";
+}
+function advanceDialog() {
+  const p = dialog.pages[dialog.page];
+  if (!typed()) { dialog.chars = p.text.length; renderDialog(); return; } // finish typing first
+  if (p.link) { window.open(p.link, "_blank", "noopener"); flags.linkOpened = true; }
+  if (p.choices) dialog.pages = dialog.pages.slice(0, dialog.page + 1).concat(p.onChoose(dialog.sel) || []);
+  if (dialog.page + 1 < dialog.pages.length) { dialog.page++; showPage(); }
+  else closeDialog();
+}
+function moveChoice(d) {
+  const p = dialog.pages[dialog.page];
+  dialog.sel = (dialog.sel + d + p.choices.length) % p.choices.length;
+  SFX.select(); renderDialog();
+}
+function talkTo(n) {
+  n.homeRow = n.row;
+  n.row = DIR_ROW[faceRow(n.x, n.y, player.x, player.y)];
+  player.dir = faceRow(player.x, player.y, n.x, n.y);
+  const N = text => ({ name: n.name, face: n.kind, text }), t = TALK[n.id];
+  const opts = [["你好！", () => t.hello(N)]];
+  if (t.wants && has(t.wants)) opts.push([`给「${ITEMS[t.wants].name}」`, () => t.give(N)]);
+  opts.push(["再见！", () => []]);
+  openDialog([Object.assign(N(t.open), { choices: opts.map(o => o[0]), onChoose: i => opts[i][1]() })], { npc: n });
+}
+
+// Things you can press Space at: creatures and the spots above.
+function targets() {
+  const list = npcs.map(n => ({ x: n.x, y: n.y, top: n.k.top || 18, range: TALK_RANGE, act: () => talkTo(n) }));
+  for (const s of SPOTS[sceneKey] || []) list.push({ ...s, act: s.use });
+  return list;
+}
+function nearestTarget() {
+  let best = null, bestD = Infinity;
+  for (const t of targets()) {
+    const d = Math.hypot(t.x - player.x, t.y - player.y);
+    if (d < t.range && d < bestD && (!t.facing || player.dir === t.facing)) { best = t; bestD = d; }
+  }
+  return best;
+}
+function action() {
+  if (pending || bagOpen() || clockOpen()) return;
+  if (dialog) { advanceDialog(); return; }
+  const t = nearestTarget(); if (t) t.act();
+}
+
+// ---------- intro ----------
+function startIntro() {
+  mode = "intro";
+  document.getElementById("title").hidden = true;
+  audio();
+  openDialog(INTRO, { center: true, onEnd: () => { mode = "play"; startBgm(); } });
+}
+function skipIntro() { if (mode === "intro") closeDialog(); }
+
+// ---------- backpack ----------
+const bagEl = document.getElementById("bag"), bagGrid = bagEl.querySelector(".grid"), bagCaption = bagEl.querySelector(".caption");
+let bagSel = 0;
+for (let i = 0; i < 9; i++) {
+  const slot = document.createElement("div"), c = document.createElement("canvas");
+  slot.className = "slot"; c.width = 16; c.height = 16; slot.appendChild(c); bagGrid.appendChild(slot);
+}
+function bagOpen() { return !bagEl.hidden; }
+function toggleBag() {
+  if (dialog || pending || mode !== "play" || clockOpen()) return;
+  bagEl.hidden = !bagEl.hidden;
+  if (bagOpen()) renderBag();
+}
+function renderBag() {
+  [...bagGrid.children].forEach((slot, i) => {
+    slot.classList.toggle("sel", i === bagSel);
+    const c = slot.firstChild.getContext("2d");
+    c.clearRect(0, 0, 16, 16);
+    if (inv[i]) c.drawImage(sheets["items.png"], ITEMS[inv[i]].icon * 16, 0, 16, 16, 0, 0, 16, 16);
+  });
+  const it = inv[bagSel] && ITEMS[inv[bagSel]];
+  bagCaption.innerHTML = it ? `<b>${it.name}</b><br>${it.desc}` : (inv.length ? "" : "背包里空空的。");
+}
+function moveBag(dir) {
+  const d = { left: -1, right: 1, up: -3, down: 3 }[dir];
+  bagSel = (bagSel + d + 9) % 9; SFX.select(); renderBag();
+}
+
+// ---------- collision ----------
+const HB = { w: 10, h: 5 }; // feet box
+function box(x, y) { return [x - HB.w / 2, y - HB.h, HB.w, HB.h]; }
+function overlap(a, b) { return a[0] < b[0] + b[2] && a[0] + a[2] > b[0] && a[1] < b[1] + b[3] && a[1] + a[3] > b[1]; }
+function inside(px, py, r) { return px >= r[0] && px < r[0] + r[2] && py >= r[1] && py < r[1] + r[3]; }
+
+function exitAt(x, y) {
+  for (const e of EXITS[sceneKey] || []) {
+    const along = (e.side === "left" || e.side === "right") ? y - 2 : x;
+    if (along < e.from || along > e.to) continue;
+    if (e.side === "right" && x + HB.w / 2 > W) return e;
+    if (e.side === "left" && x - HB.w / 2 < 0) return e;
+    if (e.side === "bottom" && y > H) return e;
+    if (e.side === "top" && y - HB.h < 0) return e;
+  }
+  return null;
+}
+
+function blocked(x, y) {
+  const b = box(x, y);
+  if (b[0] < 0 || b[1] < 0 || b[0] + b[2] > W || b[1] + b[3] > H) {
+    if (!exitAt(x, y)) return true;
+  }
+  const pts = [[b[0], b[1]], [b[0] + b[2] - 0.01, b[1]], [b[0], b[1] + b[3] - 0.01], [b[0] + b[2] - 0.01, b[1] + b[3] - 0.01]];
+  for (const [px, py] of pts) {
+    const tx = Math.floor(px / TILE), ty = Math.floor(py / TILE);
+    const row = scene.map[Math.max(0, Math.min(scene.map.length - 1, ty))];
+    const t = row[Math.max(0, Math.min(row.length - 1, tx))];
+    if (t === "w" && !scene.walk.some(r => inside(px, py, r))) return true;
+  }
+  return solids.some(r => overlap(b, r));
+}
+
+// ---------- input ----------
+const keys = new Set();
+const KEYMAP = { ArrowUp: "up", KeyW: "up", ArrowDown: "down", KeyS: "down", ArrowLeft: "left", KeyA: "left", ArrowRight: "right", KeyD: "right" };
+// Shared by the keyboard and the touch buttons.
+function pressDir(dir, repeat) {           // menus react to single presses; walking reads `keys`
+  if (clockOpen()) { clockKey(dir); return; } // auto-repeat allowed, so minutes can be scrolled quickly
+  if (repeat) return;
+  if (bagOpen()) moveBag(dir);
+  else if (dialog && dialog.pages[dialog.page].choices && typed()) moveChoice(dir === "left" || dir === "up" ? -1 : 1);
+}
+function pressConfirm() {                  // Space / A
+  if (mode === "title") startIntro();
+  else if (clockOpen()) closeClock(true);
+  else action();
+}
+function pressBack() {                     // Esc: skip the intro, close the clock or the backpack
+  if (mode === "intro") skipIntro();
+  else if (clockOpen()) closeClock(false);
+  else if (bagOpen()) toggleBag();
+}
+function pressBag() {                      // B key / B button (the button also works as "back")
+  if (mode === "intro" || clockOpen()) pressBack(); else toggleBag();
+}
+
+addEventListener("keydown", e => {
+  const dir = KEYMAP[e.code];
+  const confirm = e.code === "Space" || e.code === "Enter" || e.code === "KeyE" || e.code === "KeyZ";
+  if (dir || confirm) e.preventDefault();
+  if (dir) { keys.add(dir); pressDir(dir, e.repeat); return; }
+  if (e.repeat) return;
+  if (confirm) pressConfirm();
+  else if (e.code === "Escape") pressBack();
+  else if (e.code === "KeyB") toggleBag();
+  else if (e.code === "KeyM") toggleMusic();
+  else if (e.code === "KeyC") showBoxes = !showBoxes;
+});
+addEventListener("keyup", e => { if (KEYMAP[e.code]) keys.delete(KEYMAP[e.code]); });
+addEventListener("blur", () => keys.clear());
+
+// ---------- touch controls (only shown on touch screens) ----------
+const isTouch = matchMedia("(pointer: coarse)").matches || "ontouchstart" in window;
+function useTouchUI() {
+  if (document.body.classList.contains("touch")) return;
+  document.body.classList.add("touch");
+  document.querySelector("#title .press").textContent = "点击屏幕开始";
+  document.querySelector("#title .small").textContent = "过场中按 B 可以跳过";
+  resize();
+}
+if (isTouch) useTouchUI();
+addEventListener("touchstart", useTouchUI, { once: true, passive: true });
+document.querySelectorAll("#dpad button").forEach(b => {
+  const dir = b.dataset.dir;
+  const release = () => keys.delete(dir);
+  b.addEventListener("pointerdown", e => { e.preventDefault(); b.setPointerCapture(e.pointerId); keys.add(dir); pressDir(dir, false); });
+  b.addEventListener("pointerup", release);
+  b.addEventListener("pointercancel", release);
+  b.addEventListener("lostpointercapture", release);
+});
+// A/B act on "click" so opening the gift link still counts as a user gesture on phones.
+document.getElementById("btnA").addEventListener("click", pressConfirm);
+document.getElementById("btnB").addEventListener("click", pressBag);
+document.getElementById("stage").addEventListener("click", () => { if (mode === "title") startIntro(); });
+document.getElementById("touch").addEventListener("contextmenu", e => e.preventDefault());
+
+// ---------- update ----------
+function update(dt) {
+  player.t += dt;
+  updateConfetti(dt);
+  if (pending) {
+    fade = Math.min(1, fade + dt * 4);
+    if (fade >= 1) { enter(pending.go, pending.at[0], pending.at[1], pending.dir); pending = null; }
+    return;
+  }
+  fade = Math.max(0, fade - dt * 4);
+
+  if (dialog) {
+    player.moving = false;
+    const p = dialog.pages[dialog.page];
+    if (dialog.chars < p.text.length) {
+      dialog.chars = Math.min(p.text.length, dialog.chars + dt * TYPE_SPEED);
+      if (p.name && !p.sfx && Math.floor(dialog.chars) > dialog.blipAt) { dialog.blipAt = Math.floor(dialog.chars) + 1; SFX.blip(p.name); }
+      renderDialog();
+    }
+    return;
+  }
+  if (mode !== "play" || bagOpen() || clockOpen()) { player.moving = false; return; }
+
+  let dx = (keys.has("right") ? 1 : 0) - (keys.has("left") ? 1 : 0);
+  let dy = (keys.has("down") ? 1 : 0) - (keys.has("up") ? 1 : 0);
+  player.moving = dx !== 0 || dy !== 0;
+  if (player.moving) {
+    if (dx && dy) { dx *= Math.SQRT1_2; dy *= Math.SQRT1_2; }
+    if (dy < 0) player.dir = "up"; else if (dy > 0) player.dir = "down";
+    if (dx < 0 && !dy) player.dir = "left"; else if (dx > 0 && !dy) player.dir = "right";
+    const nx = player.x + dx * SPEED * dt, ny = player.y + dy * SPEED * dt;
+    if (!blocked(nx, player.y)) player.x = nx;
+    if (!blocked(player.x, ny)) player.y = ny;
+    const e = exitAt(player.x, player.y);
+    if (e && (player.x < 0 || player.x > W || player.y > H || player.y - HB.h < -2)) pending = e;
+    for (const z of ZONES[sceneKey] || []) if (inside(player.x, player.y, z.rect)) { SFX.door(); pending = z; }
+  }
+}
+
+// ---------- draw ----------
+// Ops: ["#", x, y, w, h, colour] fill, or ["atlas", sx, sy, w, h, dx, dy, frames?] - with frames, the piece is
+// the first of a horizontal animation strip (the campfire) played at 8 fps.
+function drawOps(ops, time) {
+  for (const op of ops) {
+    if (op[0] === "#") { ctx.fillStyle = op[5]; ctx.fillRect(op[1], op[2], op[3], op[4]); continue; }
+    let [, sx, sy, sw, sh, dx, dy, frames] = op;
+    if (frames) sx += sw * (Math.floor(time * 8) % frames);
+    ctx.drawImage(sheets["atlas.png"], sx, sy, sw, sh, dx, dy, sw, sh);
+  }
+}
+
+// Shadow ellipse sits in rows 12-15 of its 16x16 sprite; feet end 1px above py.
+function drawShadow(px, py, w) {
+  ctx.globalAlpha = 0.8;
+  ctx.drawImage(sheets["shadow.png"], px - w / 2, py - 15, w, 16);
+  ctx.globalAlpha = 1;
+}
+
+function drawNpc(n, time) {
+  const k = n.k, ax = (k.ax && k.ax[n.row]) || 24;
+  const f = Math.floor((time + n.phase) * k.fps) % k.frames;
+  if (n.rod) drawRod(n.rod, time);
+  drawShadow(n.x, n.y, k.shadow);
+  ctx.drawImage(sheets[k.src], f * 48, n.row * 48, 48, 48, n.x - ax, n.y - 32, 48, 48);
+}
+
+// Simple fishing rod: pixel line from hand to tip, thin line down to a bobbing float with a ripple.
+function pixelLine(x0, y0, x1, y1, color) {
+  const n = Math.max(1, Math.abs(x1 - x0), Math.abs(y1 - y0));
+  ctx.fillStyle = color;
+  for (let i = 0; i <= n; i++) ctx.fillRect(Math.round(x0 + (x1 - x0) * i / n), Math.round(y0 + (y1 - y0) * i / n), 1, 1);
+}
+function drawRod(r, time) {
+  const [hx, hy] = r.hand, [tx, ty] = r.tip, [wx, wy] = r.water, bob = Math.floor(time * 1.5) % 2;
+  ctx.fillStyle = "rgba(170,225,245,.8)";                       // ripple
+  ctx.fillRect(wx - 3, wy + 1, 2, 1); ctx.fillRect(wx + 2, wy + 1, 2, 1); ctx.fillRect(wx - 1, wy + 2, 3, 1);
+  pixelLine(tx, ty, wx, wy - 2 + bob, "rgba(255,243,220,.7)");  // fishing line
+  ctx.fillStyle = "#E05050"; ctx.fillRect(wx - 1, wy - 3 + bob, 3, 2);   // float
+  ctx.fillStyle = "#fff3dc"; ctx.fillRect(wx - 1, wy - 1 + bob, 3, 1);
+  pixelLine(hx, hy, tx, ty, "#6e4129");                          // rod
+  pixelLine(hx + 1, hy, tx + 1, ty, "#a0643c");
+}
+
+function drawPlayer() {
+  const px = Math.round(player.x), py = Math.round(player.y);
+  drawShadow(px, py, 16);
+  const run = player.moving;
+  const sheet = sheets[run ? "bunny_run.png" : "bunny_idle.png"];
+  const frames = run ? 8 : 5, fps = run ? 12 : 6;
+  const f = Math.floor(player.t * fps) % frames;
+  ctx.drawImage(sheet, f * 48, DIR_ROW[player.dir] * 48, 48, 48, px - 24, py - 32, 48, 48);
+}
+
+// Pixel-art gift box (no gift sprite in the pack): red box, yellow ribbon, lid lifts when opened.
+function drawGift() {
+  const x = GIFT.x - 7, y = GIFT.y - 12, open = !!flags.giftOpen;
+  drawShadow(GIFT.x, GIFT.y + 1, 18);
+  const R = (c, a, b, w, h) => { ctx.fillStyle = c; ctx.fillRect(x + a, y + b, w, h); };
+  R("#494040", 0, 3, 14, 9); R("#F27575", 1, 4, 12, 7); R("#CD4D4D", 1, 9, 12, 2);
+  R("#FBC57C", 6, 4, 2, 7);
+  if (open) { R("#5a3d3a", 1, 4, 12, 2); R("#fff3dc", 4, 2, 6, 3); R("#494040", 4, 2, 6, 1); }
+  const ly = open ? -6 : 0, lx = open ? 3 : 0;
+  R("#494040", -1 + lx, 0 + ly, 16, 5); R("#FEA2A2", 0 + lx, 1 + ly, 14, 3); R("#FBC57C", 6 + lx, 1 + ly, 2, 3);
+  if (!open) { R("#494040", 3, -3, 3, 3); R("#494040", 8, -3, 3, 3); R("#FBC57C", 4, -2, 1, 1); R("#FBC57C", 9, -2, 1, 1); }
+}
+
+// Grandfather clock with live hands (dial centre/radius come from data.js, written by build_scenes.ps1).
+function drawClock() {
+  const x0 = CLOCK_POS.x - Math.floor(CLOCK.w / 2), y0 = CLOCK_POS.y - CLOCK.h;
+  drawShadow(CLOCK_POS.x, CLOCK_POS.y + 1, 16);
+  ctx.drawImage(sheets["clock.png"], x0, y0);
+  const cx = x0 + Math.round(CLOCK.cx), cy = y0 + Math.round(CLOCK.cy);
+  const mA = clockTime.m / 60 * 2 * Math.PI, hA = ((clockTime.h % 12) + clockTime.m / 60) / 12 * 2 * Math.PI;
+  const hand = (a, len) => pixelLine(cx, cy, cx + Math.round(Math.sin(a) * len), cy - Math.round(Math.cos(a) * len), "#3b2320");
+  hand(hA, CLOCK.r * 0.5); hand(mA, CLOCK.r * 0.9);
+}
+
+// After 12:03: the room goes dark except for a pool of light around the glowing gift.
+function drawDarkness(time) {
+  const gx = GIFT.x, gy = GIFT.y - 6, pulse = 0.5 + 0.5 * Math.sin(time * 3);
+  const dark = ctx.createRadialGradient(gx, gy, 6, gx, gy, 72);
+  dark.addColorStop(0, "rgba(8,6,18,.1)"); dark.addColorStop(0.35, "rgba(8,6,18,.72)"); dark.addColorStop(1, "rgba(8,6,18,.9)");
+  ctx.fillStyle = dark; ctx.fillRect(0, 0, W, H);
+  ctx.globalCompositeOperation = "lighter";
+  const r = 24 + pulse * 5, glow = ctx.createRadialGradient(gx, gy, 0, gx, gy, r);
+  glow.addColorStop(0, "rgba(255,215,120,.5)"); glow.addColorStop(1, "rgba(255,215,120,0)");
+  ctx.fillStyle = glow; ctx.fillRect(gx - r, gy - r, r * 2, r * 2);
+  ctx.globalCompositeOperation = "source-over";
+  drawGift();
+  // Standing right in front of the box: keep the bunny in front of the redrawn box (it is lit by the glow anyway).
+  if (player.y > GIFT.y && player.y - GIFT.y < 30 && Math.abs(player.x - GIFT.x) < 20) drawPlayer();
+  ctx.fillStyle = "#fff3dc";   // sparkles circling the box
+  for (let i = 0; i < 4; i++) {
+    const a = time * 1.6 + i * Math.PI / 2;
+    if ((Math.floor(time * 6) + i) % 3) ctx.fillRect(Math.round(gx + Math.cos(a) * 13), Math.round(gy - 2 + Math.sin(a) * 7), 1, 1);
+  }
+}
+
+// Black question mark for the unknown caller's portrait.
+const QMARK = [".###.", "#...#", "....#", "...#.", "..#..", ".....", "..#.."];
+function drawFace(time) {
+  const p = dialog.pages[dialog.page];
+  if (!p.face) return;
+  faceCtx.clearRect(0, 0, FACE, FACE);
+  if (p.face === "?") {
+    faceCtx.fillStyle = "#111";
+    QMARK.forEach((row, j) => [...row].forEach((c, i) => { if (c === "#") faceCtx.fillRect(4 + i * 2, 2 + j * 2, 2, 2); }));
+    return;
+  }
+  if (p.face.startsWith("item:")) {
+    faceCtx.drawImage(sheets["items.png"], ITEMS[p.face.slice(5)].icon * 16, 0, 16, 16, 2, 2, 16, 16);
+    return;
+  }
+  const k = KINDS[p.face], [cx, cy] = k.face || [14, 12];
+  const f = Math.floor((time + dialog.phase) * k.fps) % k.frames;
+  faceCtx.drawImage(sheets[k.src], f * 48 + cx, DIR_ROW.down * 48 + cy, FACE, FACE, 0, 0, FACE, FACE);
+}
+
+function drawBubble(t, time) {
+  const bx = Math.round(t.x) - 6, by = Math.round(t.y) - t.top - 10 - (Math.floor(time * 2) % 2);
+  ctx.fillStyle = "#4e2f1f"; ctx.fillRect(bx, by, 13, 8); ctx.fillRect(bx + 5, by + 8, 3, 2);
+  ctx.fillStyle = "#fff3dc"; ctx.fillRect(bx + 1, by + 1, 11, 6); ctx.fillRect(bx + 6, by + 7, 1, 2);
+  ctx.fillStyle = "#4e2f1f"; for (const d of [3, 6, 9]) ctx.fillRect(bx + d, by + 4, 1, 1);
+}
+
+function draw(time) {
+  ctx.clearRect(0, 0, W, H);
+  ctx.drawImage(sheets[scene.ground], 0, 0);
+  // Player, creatures and the gift are y-sorted together with the scene objects.
+  const actors = npcs.map(n => ({ y: n.y, draw: () => drawNpc(n, time) }));
+  actors.push({ y: player.y, draw: drawPlayer });
+  if (sceneKey === "redhouse") actors.push({ y: GIFT.y, draw: drawGift }, { y: CLOCK_POS.y, draw: drawClock });
+  actors.sort((a, b) => a.y - b.y);
+  let i = 0;
+  for (const o of scene.objects) {
+    while (i < actors.length && actors[i].y < o.y) actors[i++].draw();
+    drawOps(o.ops, time);
+  }
+  while (i < actors.length) actors[i++].draw();
+
+  if (dialog) drawFace(time);
+  if (sceneKey === "redhouse" && flags.clockSet) drawDarkness(time);
+  const near = mode === "play" && !dialog && !pending && !bagOpen() && !clockOpen() && nearestTarget();
+  if (near) drawBubble(near, time);
+  drawConfetti();
+
+  if (showBoxes) {
+    ctx.fillStyle = "rgba(255,40,40,.35)";
+    for (const r of solids) ctx.fillRect(r[0], r[1], r[2], r[3]);
+    ctx.fillStyle = "rgba(40,120,255,.35)";
+    for (const r of scene.walk) ctx.fillRect(r[0], r[1], r[2], r[3]);
+    ctx.fillStyle = "rgba(255,255,0,.6)";
+    const b = box(player.x, player.y); ctx.fillRect(b[0], b[1], b[2], b[3]);
+    ctx.fillStyle = "rgba(0,255,120,.35)";
+    for (const e of EXITS[sceneKey] || []) {
+      if (e.side === "right") ctx.fillRect(W - 4, e.from, 4, e.to - e.from);
+      if (e.side === "left") ctx.fillRect(0, e.from, 4, e.to - e.from);
+      if (e.side === "bottom") ctx.fillRect(e.from, H - 4, e.to - e.from, 4);
+      if (e.side === "top") ctx.fillRect(e.from, 0, e.to - e.from, 4);
+    }
+    for (const z of ZONES[sceneKey] || []) ctx.fillRect(z.rect[0], z.rect[1], z.rect[2], z.rect[3]);
+  }
+  if (mode === "title" || mode === "intro") { ctx.fillStyle = "rgba(0,0,0,.55)"; ctx.fillRect(0, 0, W, H); }
+  if (fade > 0) { ctx.fillStyle = `rgba(0,0,0,${fade})`; ctx.fillRect(0, 0, W, H); }
+}
+
+// Whole-number zoom when the screen is big enough; phones get a fractional fit so the game is never cut off.
+// On touch screens room is kept for the buttons: below the game in portrait, beside it in landscape.
+function resize() {
+  const touch = document.body.classList.contains("touch"), landscape = innerWidth > innerHeight;
+  const extraH = document.getElementById("keys").offsetHeight + document.getElementById("credit").offsetHeight + 20;
+  const roomW = innerWidth - (touch && landscape ? 2 * 150 : 24);
+  const roomH = innerHeight - (touch ? (landscape ? 40 : 200) : 32 + extraH);
+  const fit = Math.min(roomW / W, roomH / H);
+  const k = fit >= 1 ? Math.floor(fit) : Math.max(0.4, fit);
+  const stage = document.getElementById("stage");
+  stage.style.width = W * k + "px";
+  stage.style.height = H * k + "px";
+  stage.style.setProperty("--k", k);
+}
+addEventListener("resize", resize);
+
+// ---------- main ----------
+let last = 0;
+function frame(ms) {
+  const t = ms / 1000, dt = Math.min(0.05, t - last || 0);
+  last = t;
+  update(dt);
+  draw(t);
+  requestAnimationFrame(frame);
+}
+
+resize();
+loadAll().then(() => {
+  enter(START.scene, START.x, START.y, START.dir);
+  mode = "title";
+  document.getElementById("title").hidden = false;
+  requestAnimationFrame(frame);
+}).catch(err => {
+  ctx.fillStyle = "#fff"; ctx.font = "12px sans-serif";
+  ctx.fillText(err.message, 8, 20);
+  console.error(err);
+});
+</script>
+</body>
+</html>
