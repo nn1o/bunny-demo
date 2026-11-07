@@ -84,19 +84,25 @@
     font: bold 18px system-ui, sans-serif; padding: 0;
   }
   #touch button:active { background: #6e4129; }
-  #dpad button { width: 52px; height: 52px; border-radius: 8px; }
-  #dpad [data-dir="up"]    { left: 72px;  bottom: 128px; }
-  #dpad [data-dir="left"]  { left: 18px;  bottom: 74px; }
-  #dpad [data-dir="right"] { left: 126px; bottom: 74px; }
-  #dpad [data-dir="down"]  { left: 72px;  bottom: 20px; }
+  /* Joystick: the whole lower-left zone takes touches; the base jumps to where the thumb lands. */
+  #stickzone { position: fixed; left: 0; bottom: 0; width: 55%; height: 200px; touch-action: none; }
+  #stick {
+    position: absolute; left: 92px; top: calc(100% - 100px); width: 116px; height: 116px; margin: -61px 0 0 -61px;
+    border-radius: 50%; background: rgba(138, 84, 52, .35); border: 3px solid rgba(78, 47, 31, .8);
+    box-shadow: inset 0 0 0 2px rgba(178, 122, 79, .6); pointer-events: none;
+  }
+  #knob {
+    position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -29px 0 0 -29px; border-radius: 50%;
+    background: #8a5434; border: 3px solid #4e2f1f; box-shadow: inset 0 0 0 2px #b27a4f;
+  }
+  #stickzone.on #knob { background: #9c6340; }
   #btnA, #btnB { border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.1; }
   #btnA { width: 76px; height: 76px; right: 20px; bottom: 70px; font-size: 24px; }
   #btnB { width: 60px; height: 60px; right: 108px; bottom: 26px; }
   #touch small { font-size: 11px; font-weight: normal; }
   @media (orientation: landscape) {
-    #dpad [data-dir="up"]    { bottom: calc(50% + 28px); }
-    #dpad [data-dir="left"], #dpad [data-dir="right"] { bottom: calc(50% - 26px); }
-    #dpad [data-dir="down"]  { bottom: calc(50% - 80px); }
+    #stickzone { width: 150px; height: auto; top: 28px; }
+    #stick { left: 76px; top: 50%; }
     #btnA { bottom: calc(50% - 8px); }
     #btnB { right: 46px; bottom: calc(50% - 92px); }
   }
@@ -125,12 +131,7 @@
 </div>
 <div id="credit">Assets: <a href="https://starmixu.itch.io/little-dreamyland-asset-pack" target="_blank" rel="noopener">Little Dreamyland</a> by Starmixu &amp; Utaskuas</div>
 <div id="touch">
-  <div id="dpad">
-    <button data-dir="up" aria-label="上">▲</button>
-    <button data-dir="left" aria-label="左">◀</button>
-    <button data-dir="right" aria-label="右">▶</button>
-    <button data-dir="down" aria-label="下">▼</button>
-  </div>
+  <div id="stickzone"><div id="stick"><div id="knob"></div></div></div>
   <button id="btnA">A<small>互动</small></button>
   <button id="btnB">B<small>背包</small></button>
 </div>
@@ -884,14 +885,50 @@ function useTouchUI() {
 }
 if (isTouch) useTouchUI();
 addEventListener("touchstart", useTouchUI, { once: true, passive: true });
-document.querySelectorAll("#dpad button").forEach(b => {
-  const dir = b.dataset.dir;
-  const release = () => keys.delete(dir);
-  b.addEventListener("pointerdown", e => { e.preventDefault(); b.setPointerCapture(e.pointerId); keys.add(dir); pressDir(dir, false); });
-  b.addEventListener("pointerup", release);
-  b.addEventListener("pointercancel", release);
-  b.addEventListener("lostpointercapture", release);
+// Joystick: stick.x / stick.y in -1..1 drive walking (speed follows how far it is pushed); past half-way it
+// also counts as a direction press for menus, choices and the clock.
+const stick = { x: 0, y: 0, id: null, dir: null, hold: 0 };
+const stickZone = document.getElementById("stickzone");
+const stickBase = document.getElementById("stick");
+const stickKnob = document.getElementById("knob");
+const STICK_R = 42; // px the knob can travel from the centre
+function stickMove(e) {
+  const r = stickBase.getBoundingClientRect();
+  let x = e.clientX - (r.left + r.width / 2), y = e.clientY - (r.top + r.height / 2);
+  const m = Math.hypot(x, y);
+  if (m > STICK_R) { x *= STICK_R / m; y *= STICK_R / m; }
+  stickKnob.style.transform = `translate(${x}px, ${y}px)`;
+  stick.x = x / STICK_R; stick.y = y / STICK_R;
+  const d = Math.hypot(stick.x, stick.y) < 0.5 ? null
+    : Math.abs(stick.x) > Math.abs(stick.y) ? (stick.x > 0 ? "right" : "left") : (stick.y > 0 ? "down" : "up");
+  if (d !== stick.dir) { stick.dir = d; stick.hold = 0; if (d) pressDir(d, false); }
+}
+function stickRelease(e) {
+  if (e && e.pointerId !== stick.id) return;
+  stick.id = null; stick.x = stick.y = 0; stick.dir = null;
+  stickKnob.style.transform = "";
+  stickBase.style.left = stickBase.style.top = "";
+  stickZone.classList.remove("on");
+}
+stickZone.addEventListener("pointerdown", e => {
+  if (stick.id !== null) return;
+  e.preventDefault();
+  stickZone.setPointerCapture(e.pointerId);
+  stick.id = e.pointerId;
+  stickZone.classList.add("on");
+  const b = stickBase.getBoundingClientRect();
+  if (Math.hypot(e.clientX - (b.left + b.width / 2), e.clientY - (b.top + b.height / 2)) > b.width / 2) {
+    const z = stickZone.getBoundingClientRect(); // thumb landed off the base: move the base under it
+    stickBase.style.left = (e.clientX - z.left) + "px";
+    stickBase.style.top = (e.clientY - z.top) + "px";
+  }
+  stickMove(e);
 });
+stickZone.addEventListener("pointermove", e => { if (e.pointerId === stick.id) stickMove(e); });
+stickZone.addEventListener("pointerup", stickRelease);
+stickZone.addEventListener("pointercancel", stickRelease);
+stickZone.addEventListener("lostpointercapture", stickRelease);
+addEventListener("blur", () => stickRelease());
 // A/B act on "click" so opening the gift link still counts as a user gesture on phones.
 document.getElementById("btnA").addEventListener("click", pressConfirm);
 document.getElementById("btnB").addEventListener("click", pressBag);
@@ -902,6 +939,10 @@ document.getElementById("touch").addEventListener("contextmenu", e => e.preventD
 function update(dt) {
   player.t += dt;
   updateConfetti(dt);
+  if (stick.dir && clockOpen()) {            // holding the stick keeps turning the clock, like a held key
+    stick.hold += dt;
+    if (stick.hold > 0.4) { stick.hold -= 0.1; clockKey(stick.dir); }
+  }
   if (pending) {
     fade = Math.min(1, fade + dt * 4);
     if (fade >= 1) { enter(pending.go, pending.at[0], pending.at[1], pending.dir); pending = null; }
@@ -921,13 +962,23 @@ function update(dt) {
   }
   if (mode !== "play" || bagOpen() || clockOpen()) { player.moving = false; return; }
 
-  let dx = (keys.has("right") ? 1 : 0) - (keys.has("left") ? 1 : 0);
-  let dy = (keys.has("down") ? 1 : 0) - (keys.has("up") ? 1 : 0);
+  let dx, dy;
+  const sm = Math.hypot(stick.x, stick.y), analog = sm > 0.2;
+  if (analog) {                              // full speed from 70% push; any angle
+    const f = Math.min(1, sm / 0.7) / sm;
+    dx = stick.x * f; dy = stick.y * f;
+  } else {
+    dx = (keys.has("right") ? 1 : 0) - (keys.has("left") ? 1 : 0);
+    dy = (keys.has("down") ? 1 : 0) - (keys.has("up") ? 1 : 0);
+    if (dx && dy) { dx *= Math.SQRT1_2; dy *= Math.SQRT1_2; }
+  }
   player.moving = dx !== 0 || dy !== 0;
   if (player.moving) {
-    if (dx && dy) { dx *= Math.SQRT1_2; dy *= Math.SQRT1_2; }
-    if (dy < 0) player.dir = "up"; else if (dy > 0) player.dir = "down";
-    if (dx < 0 && !dy) player.dir = "left"; else if (dx > 0 && !dy) player.dir = "right";
+    if (analog) player.dir = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down");
+    else {
+      if (dy < 0) player.dir = "up"; else if (dy > 0) player.dir = "down";
+      if (dx < 0 && !dy) player.dir = "left"; else if (dx > 0 && !dy) player.dir = "right";
+    }
     const nx = player.x + dx * SPEED * dt, ny = player.y + dy * SPEED * dt;
     if (!blocked(nx, player.y)) player.x = nx;
     if (!blocked(player.x, ny)) player.y = ny;
