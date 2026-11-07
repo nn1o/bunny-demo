@@ -3,6 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<!-- Opened from the home screen, phones (iPhone included) show the game without the browser bars. -->
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="小菜的礼物">
 <title>Little Dreamyland Demo</title>
 <style>
   html, body { margin: 0; height: 100%; background: #1d1f24; color: #e8e2d6; font: 14px/1.5 system-ui, sans-serif; }
@@ -96,6 +101,12 @@
     background: #8a5434; border: 3px solid #4e2f1f; box-shadow: inset 0 0 0 2px #b27a4f;
   }
   #stickzone.on #knob { background: #9c6340; }
+  #fsbtn {
+    position: fixed; top: 6px; right: 6px; z-index: 5; padding: 3px 9px; border-radius: 6px; cursor: pointer;
+    background: #8a5434; color: #fff3dc; border: 2px solid #4e2f1f; box-shadow: inset 0 0 0 1px #b27a4f;
+    font: bold 12px system-ui, sans-serif; -webkit-tap-highlight-color: transparent;
+  }
+  #fsbtn[hidden] { display: none; }
   #btnA, #btnB { border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.1; }
   #btnA { width: 76px; height: 76px; right: 20px; bottom: 70px; font-size: 24px; }
   #btnB { width: 60px; height: 60px; right: 108px; bottom: 26px; }
@@ -117,7 +128,8 @@
 </style>
 </head>
 <body>
-<div id="keys"><kbd>↑↓←→</kbd> / <kbd>WASD</kbd> 移动 · <kbd>空格</kbd> 互动 · <kbd>B</kbd> 打开背包 · <kbd>M</kbd> 音乐开关</div>
+<div id="keys"><kbd>↑↓←→</kbd> / <kbd>WASD</kbd> 移动 · <kbd>空格</kbd> 互动 · <kbd>B</kbd> 打开背包 · <kbd>M</kbd> 音乐开关 · <kbd>F</kbd> 全屏</div>
+<button id="fsbtn" hidden>全屏</button>
 <div id="stage">
   <canvas id="c" width="416" height="320"></canvas>
   <div id="dialog" hidden>
@@ -869,6 +881,7 @@ addEventListener("keydown", e => {
   else if (e.code === "Escape") pressBack();
   else if (e.code === "KeyB") toggleBag();
   else if (e.code === "KeyM") toggleMusic();
+  else if (e.code === "KeyF") toggleFullscreen();
   else if (e.code === "KeyC") showBoxes = !showBoxes;
 });
 addEventListener("keyup", e => { if (KEYMAP[e.code]) keys.delete(KEYMAP[e.code]); });
@@ -1170,6 +1183,31 @@ function resize() {
   stage.style.setProperty("--k", k);
 }
 addEventListener("resize", resize);
+
+// ---------- fullscreen ----------
+// The button is hidden where the browser has no fullscreen for pages (iPhone Safari): there, adding the game
+// to the home screen gives the same effect (see the meta tags at the top).
+const fsButton = document.getElementById("fsbtn");
+const fsRoot = document.documentElement;
+const fsRequest = fsRoot.requestFullscreen || fsRoot.webkitRequestFullscreen;
+const fsExit = document.exitFullscreen || document.webkitExitFullscreen;
+const isFullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+function toggleFullscreen() {
+  if (!fsRequest) return;
+  const p = isFullscreen() ? fsExit.call(document) : fsRequest.call(fsRoot);
+  if (p && p.catch) p.catch(() => {});
+}
+function onFullscreenChange() {
+  fsButton.textContent = isFullscreen() ? "退出全屏" : "全屏";
+  fsButton.blur(); // so Space keeps going to the game, not the button
+  resize();
+}
+if (fsRequest) {
+  fsButton.hidden = false;
+  fsButton.addEventListener("click", toggleFullscreen);
+  document.addEventListener("fullscreenchange", onFullscreenChange);
+  document.addEventListener("webkitfullscreenchange", onFullscreenChange);
+} else document.getElementById("keys").innerHTML = document.getElementById("keys").innerHTML.replace(" · <kbd>F</kbd> 全屏", "");
 
 // ---------- main ----------
 let last = 0;
